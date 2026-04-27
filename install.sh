@@ -3,22 +3,22 @@ if [[ -f "/usr/local/bin/sunshine-vd" ]]; then
     sudo rm /usr/local/bin/sunshine-vd
 fi
 
-if [[ -f "/opt/sunshine-vd" ]]; then
+if [[ -d "/opt/sunshine-vd" ]]; then
     echo "Found sunshine-vd folder Removing..."
     sudo rm -r /opt/sunshine-vd
 fi
 
-if [[ -f "/opt/sunshine-vd" ]]; then
+if [[ -f "/etc/systemd/system/sunshine-vd.service" ]]; then
     echo "Found service Removing..."
-    sudo systemctl stop sunshinevd.service
-    sudo systemctl disable sunshinevd.service
+    sudo systemctl stop sunshine-vd.service
+    sudo systemctl disable sunshine-vd.service
     sudo rm /etc/systemd/system/sunshine-vd.service
 fi
 
 echo "copying..."
 sudo cp sunshine-vd /usr/local/bin/
-sudo mkdir /opt/sunshine-vd
-sudo cp -r src/* /opt/sunshine-vd/
+sudo mkdir -p /opt/sunshine-vd
+sudo cp -r src /opt/sunshine-vd/
 
 echo "setting up service..."
 sudo cp sunshine-vd.service /etc/systemd/system/

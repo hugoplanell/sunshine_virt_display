@@ -3,9 +3,9 @@ import socket
 import os
 
 BASE_DIR = os.path.dirname(os.path.realpath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
 
 SOCKET_FILE = "/tmp/sunshineVD.sock"
-MAIN_PY_PATH = os.path.join(BASE_DIR, "main.py")
 
 # 1. Clean up the socket file if it already exists from a previous run
 if os.path.exists(SOCKET_FILE):
@@ -29,7 +29,7 @@ while True:
         if data:
             args = data.decode('utf-8').split(',')
             print("received : {args}")
-            subprocess.run(["/usr/bin/python3", MAIN_PY_PATH] + args)
+            subprocess.run(["/usr/bin/python3", "-m", "src.main"] + args, cwd=ROOT_DIR)
     finally:
         # 6. Always close the connection when done
         connection.close()

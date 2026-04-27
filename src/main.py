@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 # Ensure the script directory is on the Python path for local imports
-sys.path.insert(0, str(Path(__file__).parent.absolute()))
+sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
 
 import argparse
 

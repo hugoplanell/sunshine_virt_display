@@ -10,7 +10,7 @@ Type=simple
 User=root
 Group=root
 
-ExecStart=/usr/bin/python3 /opt/sunshine-vd/receiver.py
+ExecStart=/usr/bin/python3 /opt/sunshine-vd/src/receiver.py
 
 Restart=always
 RestartSec=3
