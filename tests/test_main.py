@@ -10,7 +10,7 @@ class TestMain:
     def _run(self, argv: list[str], expected_exit: int = 0) -> None:
         with patch("sys.argv", ["main.py"] + argv), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -21,7 +21,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.connect", return_value=True), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -32,7 +32,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.connect", return_value=False), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -42,7 +42,7 @@ class TestMain:
         with patch("sys.argv", ["main.py", "--connect"]), \
              patch("os.geteuid", return_value=0), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -53,7 +53,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.disconnect", return_value=True), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -64,7 +64,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.disconnect", return_value=False), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -74,7 +74,7 @@ class TestMain:
         with patch("sys.argv", ["main.py"]), \
              patch("os.geteuid", return_value=0), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -84,7 +84,7 @@ class TestMain:
         with patch("sys.argv", ["main.py", "--connect", "--width", "1920", "--height", "1080"]), \
              patch("os.geteuid", return_value=1000), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -95,7 +95,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.connect", return_value=True) as mock_connect, \
              pytest.raises(SystemExit):
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -106,7 +106,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.connect", return_value=True) as mock_connect, \
              pytest.raises(SystemExit):
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
@@ -117,7 +117,7 @@ class TestMain:
              patch("os.geteuid", return_value=0), \
              patch("src.display.connect", side_effect=RuntimeError("boom")), \
              pytest.raises(SystemExit) as exc:
-            import main
+            import src.main as main
             import importlib
             importlib.reload(main)
             main.main()
