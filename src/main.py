@@ -63,7 +63,12 @@ Examples:
             default=None,
             metavar="CARD",
             help="DRM card to use for the virtual display (e.g. card1). "
-                 "Auto-detected by default (card with most connected displays).",
+            "Auto-detected by default (card with most connected displays).",
+        )
+        _ = parser.add_argument(
+            "--keep-physical-displays",
+            action="store_true",
+            help="Keep currently connected physical displays on",
         )
 
         args = parser.parse_args()
@@ -76,7 +81,13 @@ Examples:
                 )
                 sys.exit(1)
 
-            success = display.connect(args.width, args.height, args.refresh_rate, device=args.device)
+            success = display.connect(
+                args.width,
+                args.height,
+                args.refresh_rate,
+                device=args.device,
+                keep_physical_displays=args.keep_physical_displays,
+            )
             sys.exit(0 if success else 1)
 
         elif args.disconnect:

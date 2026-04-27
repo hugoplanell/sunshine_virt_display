@@ -190,6 +190,27 @@ class TestConnect:
             connect(1920, 1080, 60)
         mock_release.assert_called_with("card1", "HDMI-1")
 
+    def test_keep_physical_displays_does_not_disable_outputs(self, tmp_path):
+        mock_release = MagicMock(return_value=True)
+        mock_run = MagicMock(return_value=_ok_run())
+        with patch("src.display.SCRIPT_DIR", tmp_path), \
+             patch("src.display.get_pixel_clock_info", return_value=(100.0, 655.35, False)), \
+             patch("src.display.get_drm_devices", return_value=[Path("/sys/kernel/debug/dri/0000:01:00.0")]), \
+             patch("src.display.get_card_name_from_device", return_value="card1"), \
+             patch("src.display.get_connected_displays", return_value=["HDMI-1"]), \
+             patch("src.display.find_empty_slot", return_value=("DP-1", tmp_path)), \
+             patch("src.display.run_command", mock_run), \
+             patch("src.display.release_crtc", mock_release), \
+             patch("src.display.force_crtc_assignment", return_value=True), \
+             patch("src.display.wait_for_output_ready", return_value=(True, "1920x1080")), \
+             patch("src.display.clear_kwin_output_config"), \
+             patch("src.display.create_edid", return_value=b"\x00" * 256):
+            result = connect(1920, 1080, 60, keep_physical_displays=True)
+
+        assert result is True
+        mock_release.assert_not_called()
+        assert all("echo off" not in c.args[0] for c in mock_run.call_args_list)
+
     def test_force_crtc_when_not_ready(self, tmp_path, capsys):
         ready_seq = [(False, ""), (True, "1920x1080")]
         with patch("src.display.SCRIPT_DIR", tmp_path), \

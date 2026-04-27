@@ -99,7 +99,13 @@ class TestMain:
             import importlib
             importlib.reload(main)
             main.main()
-        mock_connect.assert_called_once_with(1920, 1080, 120, device=None)
+        mock_connect.assert_called_once_with(
+            1920,
+            1080,
+            120,
+            device=None,
+            keep_physical_displays=False,
+        )
 
     def test_connect_with_device(self):
         with patch("sys.argv", ["main.py", "--connect", "--width", "1920", "--height", "1080", "-d", "card1"]), \
@@ -110,7 +116,30 @@ class TestMain:
             import importlib
             importlib.reload(main)
             main.main()
-        mock_connect.assert_called_once_with(1920, 1080, 60, device="card1")
+        mock_connect.assert_called_once_with(
+            1920,
+            1080,
+            60,
+            device="card1",
+            keep_physical_displays=False,
+        )
+
+    def test_connect_keep_physical_displays(self):
+        with patch("sys.argv", ["main.py", "--connect", "--width", "1920", "--height", "1080", "--keep-physical-displays"]), \
+             patch("os.geteuid", return_value=0), \
+             patch("src.display.connect", return_value=True) as mock_connect, \
+             pytest.raises(SystemExit):
+            import src.main as main
+            import importlib
+            importlib.reload(main)
+            main.main()
+        mock_connect.assert_called_once_with(
+            1920,
+            1080,
+            60,
+            device=None,
+            keep_physical_displays=True,
+        )
 
     def test_fatal_exception_exits_1(self, capsys):
         with patch("sys.argv", ["main.py", "--connect", "--width", "1920", "--height", "1080"]), \

@@ -22,7 +22,13 @@ from src.edid import create_edid, find_best_vic_resolution, get_pixel_clock_info
 SCRIPT_DIR = Path(__file__).parent.parent.absolute()
 
 
-def connect(width: int, height: int, refresh_rate: int, device: str | None = None) -> bool:
+def connect(
+    width: int,
+    height: int,
+    refresh_rate: int,
+    device: str | None = None,
+    keep_physical_displays: bool = False,
+) -> bool:
     """
     Connect a virtual display:
     1. Generate custom EDID
@@ -142,18 +148,20 @@ def connect(width: int, height: int, refresh_rate: int, device: str | None = Non
 
     print(f"  ✓ EDID override applied")
 
-    # Step 5: Turn off all connected displays and explicitly release their CRTCs.
-    # On AMD, echo off > status marks the connector disconnected in sysfs but
-    # the compositor keeps the CRTC active.  Without an explicit CRTC release
-    # the compositor continues rendering to the old displays, Sunshine sees
-    # multiple monitors, and uses the wrong one.
-    print("\nStep 5: Turning off connected displays...")
-    for display in connected_displays:
-        _ = release_crtc(card_name, display)
-        status_path = f"/sys/class/drm/{card_name}-{display}/status"
-        cmd = f"sh -c 'echo off > {status_path}'"
-        _ = run_command(cmd)
-        print(f"  ✓ Turned off {display}")
+    # Step 5: Optionally keep physical displays on for external-screen mode.
+    if keep_physical_displays:
+        print("\nStep 5: Keeping connected displays on...")
+    else:
+        # On AMD, echo off > status marks the connector disconnected in sysfs
+        # but the compositor can keep the CRTC active. Without an explicit CRTC
+        # release, Sunshine may keep using the old outputs.
+        print("\nStep 5: Turning off connected displays...")
+        for display in connected_displays:
+            _ = release_crtc(card_name, display)
+            status_path = f"/sys/class/drm/{card_name}-{display}/status"
+            cmd = f"sh -c 'echo off > {status_path}'"
+            _ = run_command(cmd)
+            print(f"  ✓ Turned off {display}")
 
     # Step 6: Clear any stale KWin output config, then turn on virtual display
     print(f"\nStep 6: Preparing virtual display ({empty_port})...")
