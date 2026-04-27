@@ -44,16 +44,36 @@ sudo visudo
 Add the following line at the end of the file, replacing your username and the path you cloned the repo to:
 
 ```
-<your-username> ALL=(ALL) NOPASSWD: /usr/bin/python3 /home/<your-username>/sunshine_virt_display/main.py *
+<your-username> ALL=(ALL) NOPASSWD: /usr/bin/python3 /home/<your-username>/sunshine_virt_display/src/main.py *
 ```
 
 For example, if your username is `alice` and you cloned to `/home/alice/sunshine_virt_display`:
 
 ```
-alice ALL=(ALL) NOPASSWD: /usr/bin/python3 /home/alice/sunshine_virt_display/main.py *
+alice ALL=(ALL) NOPASSWD: /usr/bin/python3 /home/alice/sunshine_virt_display/src/main.py *
 ```
 
 Save and exit.
+
+### Systemd Service
+
+The repository includes a systemd service file, [sunshine-vd.service](sunshine-vd.service), which runs the daemon as root and starts [src/receiver.py](src/receiver.py) from `/opt/sunshine-vd/`.
+
+You can install it with:
+
+```bash
+sudo ./install.sh
+```
+
+This copies the runtime files to `/opt/sunshine-vd/`, installs the service into `/etc/systemd/system/`, reloads systemd, enables `sunshine-vd.service`, and starts it.
+
+To manage it manually:
+
+```bash
+sudo systemctl status sunshine-vd.service
+sudo systemctl restart sunshine-vd.service
+sudo systemctl stop sunshine-vd.service
+```
 
 ### Configure Sunshine
 
