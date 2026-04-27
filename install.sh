@@ -30,6 +30,6 @@ echo "service status : "
 sudo systemctl status sunshine-vd.service
 
 echo "Do Command : "
-echo 'sh -c "sunshine-vd --connect --width ${SUNSHINE_CLIENT_WIDTH} --height ${SUNSHINE_CLIENT_HEIGHT} --refresh-rate ${SUNSHINE_CLIENT_FPS}"'
+echo 'sh -c "sunshine-vd --connect --keep-physical-displays-on --width ${SUNSHINE_CLIENT_WIDTH} --height ${SUNSHINE_CLIENT_HEIGHT} --refresh-rate ${SUNSHINE_CLIENT_FPS}"'
 echo "Undo Command : "
 echo "sunshine-vd --disconnect"

@@ -2,8 +2,8 @@
 import socket
 import sys
 
-# Format the 3 args into a string
-message = ",".join(sys.argv[1:6])
+# Forward all arguments so optional flags reach the Python entrypoint.
+message = ",".join(sys.argv[1:])
 
 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:

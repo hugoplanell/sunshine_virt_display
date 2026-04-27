@@ -170,7 +170,7 @@ def wait_for_output_ready(card_name, port, width, height, timeout=4.0):
     return False, ""
 
 
-def connect_virtual_display(width, height, refresh_rate):
+def connect_virtual_display(width, height, refresh_rate, keep_physical_displays_on=False):
     """
     Connect a virtual display:
     1. Generate custom EDID
@@ -238,13 +238,17 @@ def connect_virtual_display(width, height, refresh_rate):
 
     print(f"  ✓ EDID override applied")
 
-    # Step 5: Turn off all connected displays
+    # Step 5: Turn off all connected displays unless the caller wants a
+    # portable-screen style setup that keeps the physical monitors active.
     print("\nStep 5: Turning off connected displays...")
-    for display in connected_displays:
-        status_path = f"/sys/class/drm/{card_name}-{display}/status"
-        cmd = f"sh -c 'echo off > {status_path}'"
-        result = run_command(cmd)
-        print(f"  ✓ Turned off {display}")
+    if keep_physical_displays_on:
+        print("  Keeping physical displays enabled by request")
+    else:
+        for display in connected_displays:
+            status_path = f"/sys/class/drm/{card_name}-{display}/status"
+            cmd = f"sh -c 'echo off > {status_path}'"
+            result = run_command(cmd)
+            print(f"  ✓ Turned off {display}")
 
     # Step 6: Turn on virtual display
     print(f"\nStep 6: Turning on virtual display ({empty_port})...")
@@ -356,6 +360,11 @@ Examples:
         parser.add_argument(
             "--disconnect", action="store_true", help="Disconnect virtual display"
         )
+        parser.add_argument(
+            "--keep-physical-displays-on",
+            action="store_true",
+            help="Keep connected physical displays enabled while creating the virtual display",
+        )
         parser.add_argument("--width", type=int, help="Display width in pixels")
         parser.add_argument("--height", type=int, help="Display height in pixels")
         parser.add_argument(
@@ -376,7 +385,10 @@ Examples:
                 sys.exit(1)
 
             success = connect_virtual_display(
-                args.width, args.height, args.refresh_rate
+                args.width,
+                args.height,
+                args.refresh_rate,
+                keep_physical_displays_on=args.keep_physical_displays_on,
             )
             sys.exit(0 if success else 1)
 

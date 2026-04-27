@@ -62,7 +62,7 @@ Configure Sunshine to run these commands when clients connect/disconnect in the 
 **Do Command (On Client Connect):**
 
 ```bash
-sh -c "path/to/virt_display.sh --connect --width ${SUNSHINE_CLIENT_WIDTH} --height ${SUNSHINE_CLIENT_HEIGHT} --refresh-rate ${SUNSHINE_CLIENT_FPS}"
+sh -c "path/to/virt_display.sh --connect --keep-physical-displays-on --width ${SUNSHINE_CLIENT_WIDTH} --height ${SUNSHINE_CLIENT_HEIGHT} --refresh-rate ${SUNSHINE_CLIENT_FPS}"
 ```
 
 **Undo Command (On Client Disconnect):**
@@ -87,13 +87,14 @@ git checkout $(git describe --tags $(git rev-list --tags --max-count=1))
 ### On Connect:
 
 1. Script receives `--connect` flag
-2. Get client resolution and refresh rate from Sunshine
-3. Generate custom EDID based on client's display parameters
-4. List all currently connected displays
-5. Pick the first available empty display slot (prioritizes DisplayPort, falls back to HDMI)
-6. Force override EDID for that slot: `sudo sh -c 'cat custom_edid.bin > /sys/kernel/debug/dri/0000:01:00.0/<port>/edid_override'`
-7. Disable all currently connected physical displays: `echo off | sudo tee /sys/class/drm/card1-<port>/status`
-8. Enable the virtual display: `echo on | sudo tee /sys/class/drm/card1-<port>/status`
+2. Optional `--keep-physical-displays-on` leaves the existing monitors active
+3. Get client resolution and refresh rate from Sunshine
+4. Generate custom EDID based on client's display parameters
+5. List all currently connected displays
+6. Pick the first available empty display slot (prioritizes DisplayPort, falls back to HDMI)
+7. Force override EDID for that slot: `sudo sh -c 'cat custom_edid.bin > /sys/kernel/debug/dri/0000:01:00.0/<port>/edid_override'`
+8. Disable all currently connected physical displays unless `--keep-physical-displays-on` is set
+9. Enable the virtual display: `echo on | sudo tee /sys/class/drm/card1-<port>/status`
 
 ### On Disconnect:
 
