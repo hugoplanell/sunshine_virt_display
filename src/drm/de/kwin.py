@@ -38,23 +38,28 @@ def clear_kwin_output_config(port: str) -> None:
 
     try:
         data: Any = json.loads(config_path.read_text())
+
+        def _filter_outputs(outputs: list[Any]) -> tuple[list[Any], bool]:
+            filtered = [o for o in outputs if o.get("name") != port]
+            return filtered, len(filtered) < len(outputs)
+
         # kwinoutputconfig.json may be {"outputs": [...]} or a bare [...]
         if isinstance(data, list):
-            outputs: list[Any] = data
-            filtered: list[Any] = [o for o in outputs if o.get("name") != port]
-            if len(filtered) < len(outputs):
+            filtered, changed = _filter_outputs(data)
+            if changed:
                 _ = config_path.write_text(json.dumps(filtered, indent=2))
                 print(f"  ✓ Cleared KWin saved config for {port} (was overriding EDID resolution)")
             else:
                 print(f"  ✓ No stale KWin config for {port}")
         else:
             outputs = data.get("outputs", [])
-            original_count: int = len(outputs)
-            data["outputs"] = [o for o in outputs if o.get("name") != port]
-            if len(data["outputs"]) < original_count:
-                _ = config_path.write_text(json.dumps(data, indent=2))
-                print(f"  ✓ Cleared KWin saved config for {port} (was overriding EDID resolution)")
-            else:
-                print(f"  ✓ No stale KWin config for {port}")
+            if isinstance(outputs, list):
+                filtered, changed = _filter_outputs(outputs)
+                if changed:
+                    data["outputs"] = filtered
+                    _ = config_path.write_text(json.dumps(data, indent=2))
+                    print(f"  ✓ Cleared KWin saved config for {port} (was overriding EDID resolution)")
+                else:
+                    print(f"  ✓ No stale KWin config for {port}")
     except Exception as e:
         print(f"  Warning: Could not update kwinoutputconfig.json: {e}")

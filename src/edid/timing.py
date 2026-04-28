@@ -16,13 +16,7 @@ def check_if_calculation_breaks(width: int, height: int, refresh_rate: int) -> b
     the EDID pixel clock limit (655.35 MHz).
     Returns True if it would break.
     """
-    h_blank = max(80, int(width * 0.08))
-    h_total = width + h_blank
-    v_blank_estimate = max(23, int(height * 0.025))
-    pixel_clock_hz = h_total * (height + v_blank_estimate) * refresh_rate
-    pixel_clock = int(pixel_clock_hz / 10000)
-
-    return pixel_clock > 65535
+    return get_pixel_clock_info(width, height, refresh_rate)[2]
 
 
 def get_pixel_clock_info(width: int, height: int, refresh_rate: int) -> tuple[float, float, bool]:

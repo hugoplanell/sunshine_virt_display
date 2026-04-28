@@ -5,6 +5,8 @@ Connect and disconnect virtual displays by managing EDIDs and sysfs connector st
 from __future__ import annotations
 
 import json
+import shlex
+import subprocess
 from pathlib import Path
 
 from src.drm import (
@@ -15,13 +17,127 @@ from src.drm import (
     get_drm_device_for_card,
     get_drm_devices,
     release_crtc,
-    run_command,
     wait_for_output_ready,
 )
 from src.drm.de.kwin import clear_kwin_output_config
 from src.edid import create_edid, find_best_vic_resolution, get_pixel_clock_info
 
 SCRIPT_DIR = Path(__file__).parent.parent.absolute()
+
+
+def run_command(command: str) -> subprocess.CompletedProcess[str]:
+    """Compatibility wrapper kept for tests and external callers."""
+    return subprocess.run(shlex.split(command), capture_output=True, text=True)
+
+
+def _state_file() -> Path:
+    return SCRIPT_DIR / "virt_display.state"
+
+
+def _write_sysfs_text(path: Path, value: str) -> bool:
+    try:
+        path.write_text(value)
+        return True
+    except OSError as e:
+        print(f"  Error writing {path}: {e}")
+        return False
+
+
+def _write_sysfs_bytes(path: Path, value: bytes) -> bool:
+    try:
+        path.write_bytes(value)
+        return True
+    except OSError as e:
+        print(f"  Error writing {path}: {e}")
+        return False
+
+
+def _write_state(
+    card_name: str,
+    virtual_port: str,
+    disabled_displays_by_card: dict[str, list[str]],
+    disable_physical_displays: bool,
+) -> bool:
+    state = {
+        "card_name": card_name,
+        "virtual_port": virtual_port,
+        "disabled_displays_by_card": disabled_displays_by_card,
+        "disable_physical_displays": disable_physical_displays,
+    }
+    try:
+        _state_file().write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
+        return True
+    except OSError as e:
+        print(f"  Error writing state file: {e}")
+        return False
+
+
+def _load_state() -> tuple[str, str, dict[str, list[str]]] | None:
+    state_file = _state_file()
+    try:
+        raw = state_file.read_text().strip()
+    except OSError as e:
+        print(f"Error: Could not read state file: {e}")
+        return None
+
+    if not raw:
+        print("Error: Invalid state file")
+        return None
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        state_data = raw.split("\n")
+        if len(state_data) < 2:
+            print("Error: Invalid state file")
+            return None
+
+        card_name = state_data[0]
+        virtual_port = state_data[1]
+        previous_displays = (
+            state_data[2].split(",") if len(state_data) > 2 and state_data[2] else []
+        )
+        disabled_displays_by_card: dict[str, list[str]] = {card_name: previous_displays}
+
+        for line in state_data[3:]:
+            if not line.startswith("disabled_by_card_json="):
+                continue
+
+            raw_json = line.split("=", 1)[1].strip()
+            try:
+                parsed = json.loads(raw_json)
+            except json.JSONDecodeError:
+                continue
+
+            if isinstance(parsed, dict):
+                normalized: dict[str, list[str]] = {}
+                for parsed_card, parsed_displays in parsed.items():
+                    if isinstance(parsed_card, str) and isinstance(parsed_displays, list):
+                        normalized[parsed_card] = [d for d in parsed_displays if isinstance(d, str)]
+                if normalized:
+                    disabled_displays_by_card = normalized
+
+        return card_name, virtual_port, disabled_displays_by_card
+
+    if not isinstance(data, dict):
+        print("Error: Invalid state file")
+        return None
+
+    card_name = data.get("card_name")
+    virtual_port = data.get("virtual_port")
+    disabled_displays_by_card = data.get("disabled_displays_by_card", {})
+
+    if not isinstance(card_name, str) or not isinstance(virtual_port, str):
+        print("Error: Invalid state file")
+        return None
+
+    normalized: dict[str, list[str]] = {}
+    if isinstance(disabled_displays_by_card, dict):
+        for parsed_card, parsed_displays in disabled_displays_by_card.items():
+            if isinstance(parsed_card, str) and isinstance(parsed_displays, list):
+                normalized[parsed_card] = [d for d in parsed_displays if isinstance(d, str)]
+
+    return card_name, virtual_port, normalized
 
 
 def connect(
@@ -85,7 +201,8 @@ def connect(
     )
 
     edid_file = SCRIPT_DIR / "custom_edid.bin"
-    _ = edid_file.write_bytes(edid_data)
+    if not _write_sysfs_bytes(edid_file, edid_data):
+        return False
     print(f"  ✓ Created EDID file: {edid_file}")
     print(f"  ✓ Final resolution: {width}x{height} @ {refresh_rate}Hz")
     print(f"  ✓ EDID size: {len(edid_data)} bytes")
@@ -166,11 +283,7 @@ def connect(
     print(f"\nStep 4: Overriding EDID for {empty_port}...")
     edid_override_path = slot_device / empty_port / "edid_override"
 
-    cmd = f"sh -c 'cat {edid_file.absolute()} > {edid_override_path}'"
-    result = run_command(cmd)
-
-    if result.returncode != 0:
-        print(f"  Error overriding EDID: {result.stderr}")
+    if not _write_sysfs_bytes(edid_override_path, edid_data):
         return False
 
     print(f"  ✓ EDID override applied")
@@ -188,9 +301,9 @@ def connect(
 
             for display in card_connected:
                 _ = release_crtc(card, display)
-                status_path = f"/sys/class/drm/{card}-{display}/status"
-                cmd = f"sh -c 'echo off > {status_path}'"
-                _ = run_command(cmd)
+                status_path = Path(f"/sys/class/drm/{card}-{display}/status")
+                if not _write_sysfs_text(status_path, "off"):
+                    return False
                 disabled_displays_by_card.setdefault(card, []).append(display)
                 print(f"  ✓ Turned off {card}-{display}")
     else:
@@ -200,12 +313,8 @@ def connect(
     print(f"\nStep 6: Preparing virtual display ({empty_port})...")
     clear_kwin_output_config(empty_port)
     print(f"  Turning on virtual display ({empty_port})...")
-    status_path = f"/sys/class/drm/{card_name}-{empty_port}/status"
-    cmd = f"sh -c 'echo on > {status_path}'"
-    result = run_command(cmd)
-
-    if result.returncode != 0:
-        print(f"  Error turning on display: {result.stderr}")
+    status_path = Path(f"/sys/class/drm/{card_name}-{empty_port}/status")
+    if not _write_sysfs_text(status_path, "on"):
         return False
 
     print(f"  ✓ Virtual display enabled on {empty_port}")
@@ -226,16 +335,13 @@ def connect(
             print(f"  ⚠ Timed out waiting for output, proceeding anyway")
 
     # Save state for disconnect
-    state_file = SCRIPT_DIR / "virt_display.state"
-    # Keep line 3 compatible with old state format (selected card displays), and
-    # append structured data for multi-card restore when option is enabled.
-    _ = state_file.write_text(
-        f"{card_name}\n"
-        f"{empty_port}\n"
-        f"{','.join(disabled_displays_by_card.get(card_name, []))}\n"
-        f"disabled_by_card_json={json.dumps(disabled_displays_by_card, sort_keys=True)}\n"
-        f"disable_physical_displays={1 if disable_physical_displays else 0}\n"
-    )
+    if not _write_state(
+        card_name,
+        empty_port,
+        disabled_displays_by_card,
+        disable_physical_displays,
+    ):
+        return False
 
     print(f"\n✓ Virtual display successfully connected!")
     print(f"  Port: {card_name}-{empty_port}")
@@ -252,34 +358,16 @@ def disconnect() -> bool:
     """
     print("Disconnecting virtual display...")
 
-    state_file = SCRIPT_DIR / "virt_display.state"
+    state_file = _state_file()
     if not state_file.exists():
         print("Error: No state file found. Was a virtual display connected?")
         return False
 
-    state_data = state_file.read_text().strip().split("\n")
-    if len(state_data) < 2:
-        print("Error: Invalid state file")
+    loaded_state = _load_state()
+    if not loaded_state:
         return False
 
-    card_name = state_data[0]
-    virtual_port = state_data[1]
-    previous_displays = state_data[2].split(",") if len(state_data) > 2 and state_data[2] else []
-    disabled_displays_by_card: dict[str, list[str]] = {card_name: previous_displays}
-
-    for line in state_data[3:]:
-        if line.startswith("disabled_by_card_json="):
-            raw_json = line.split("=", 1)[1].strip()
-            try:
-                parsed = json.loads(raw_json)
-                if isinstance(parsed, dict):
-                    normalized: dict[str, list[str]] = {}
-                    for parsed_card, parsed_displays in parsed.items():
-                        if isinstance(parsed_card, str) and isinstance(parsed_displays, list):
-                            normalized[parsed_card] = [d for d in parsed_displays if isinstance(d, str)]
-                    disabled_displays_by_card = normalized
-            except Exception:
-                pass
+    card_name, virtual_port, disabled_displays_by_card = loaded_state
 
     print(f"  Virtual display: {card_name}-{virtual_port}")
     print(
@@ -293,9 +381,8 @@ def disconnect() -> bool:
     for restore_card, restore_displays in disabled_displays_by_card.items():
         for display in restore_displays:
             if display:
-                status_path = f"/sys/class/drm/{restore_card}-{display}/status"
-                cmd = f"sh -c 'echo on > {status_path}'"
-                _ = run_command(cmd)
+                status_path = Path(f"/sys/class/drm/{restore_card}-{display}/status")
+                _ = _write_sysfs_text(status_path, "on")
                 print(f"  ✓ Turned on {restore_card}-{display}")
 
     # Step 2: Force CRTC assignment for restored displays
@@ -311,16 +398,16 @@ def disconnect() -> bool:
     _ = release_crtc(card_name, virtual_port)
 
     print(f"\nStep 4: Turning off virtual display ({virtual_port})...")
-    status_path = f"/sys/class/drm/{card_name}-{virtual_port}/status"
-    cmd = f"sh -c 'echo off > {status_path}'"
-    result = run_command(cmd)
-
-    if result.returncode != 0:
-        print(f"  Warning: Could not turn off virtual display: {result.stderr}")
-    else:
+    status_path = Path(f"/sys/class/drm/{card_name}-{virtual_port}/status")
+    if _write_sysfs_text(status_path, "off"):
         print(f"  ✓ Virtual display turned off")
+    else:
+        print(f"  Warning: Could not turn off virtual display")
 
-    state_file.unlink()
+    try:
+        state_file.unlink()
+    except FileNotFoundError:
+        pass
 
     print("\n✓ Virtual display disconnected!")
     return True

@@ -6,30 +6,32 @@ and connector state.
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
 
 def run_command(command: str) -> subprocess.CompletedProcess[str]:
     """Run a shell command and return the CompletedProcess."""
-    return subprocess.run(command, shell=True, capture_output=True, text=True)
+    return subprocess.run(shlex.split(command), capture_output=True, text=True)
 
 
 def get_drm_devices() -> list[Path]:
     """Get list of DRM devices from /sys/kernel/debug/dri/"""
-    debug_dri_path = "/sys/kernel/debug/dri"
+    debug_dri_path = Path("/sys/kernel/debug/dri")
     devices: list[Path] = []
 
-    result = run_command(f"ls -1 {debug_dri_path}")
-    if result.returncode != 0:
+    try:
+        entries = sorted(debug_dri_path.iterdir(), key=lambda path: path.name)
+    except OSError:
         print(
             "Error: /sys/kernel/debug/dri not found or not accessible. Make sure debugfs is mounted."
         )
         return devices
 
-    for line in result.stdout.strip().split("\n"):
-        if line.startswith("0000:"):
-            devices.append(Path(debug_dri_path) / line)
+    for entry in entries:
+        if entry.name.startswith("0000:"):
+            devices.append(entry)
 
     return sorted(devices)
 
@@ -38,20 +40,15 @@ def get_display_ports(drm_device: Path) -> dict[str, list[str]]:
     """Get all display ports for a given DRM device."""
     ports: dict[str, list[str]] = {"DP": [], "HDMI": []}
 
-    result = run_command(f"ls -1 {drm_device}")
-    if result.returncode != 0:
-        print(f"DEBUG: get_display_ports: failed to list {drm_device} (rc={result.returncode})")
+    try:
+        entries = sorted(drm_device.iterdir(), key=lambda path: path.name)
+    except OSError:
+        print(f"DEBUG: get_display_ports: failed to list {drm_device}")
         return ports
 
-    # Parse debugfs output and collect ports. Keep debug output concise.
-    for line in result.stdout.strip().split("\n"):
-        port_name = line.strip()
-        if not port_name:
-            continue
-        if port_name.startswith("DP-"):
-            ports["DP"].append(port_name)
-        # Treat internal Embedded DisplayPort connectors (eDP) as DP ports
-        elif port_name.startswith("eDP-"):
+    for entry in entries:
+        port_name = entry.name
+        if port_name.startswith("DP-") or port_name.startswith("eDP-"):
             ports["DP"].append(port_name)
         elif port_name.startswith("HDMI-"):
             ports["HDMI"].append(port_name)
@@ -65,7 +62,13 @@ def get_connected_displays(card_name: str) -> list[str]:
     drm_path = Path("/sys/class/drm")
     connected: list[str] = []
 
-    for display in drm_path.iterdir():
+    try:
+        displays = sorted(drm_path.iterdir(), key=lambda path: path.name)
+    except OSError:
+        print(f"DEBUG: get_connected_displays({card_name}): connected=[]")
+        return connected
+
+    for display in displays:
         if display.name.startswith(f"{card_name}-"):
             status_file = display / "status"
             if status_file.exists():
@@ -103,28 +106,22 @@ def get_drm_device_for_card(card_name: str) -> Path | None:
     """Find the DRM device path (from debugfs) for a given card name."""
     drm_class_path = Path("/sys/class/drm")
     card_path = drm_class_path / card_name
-    
+
     if not card_path.exists():
         return None
-    
+
     device_link = card_path / "device"
     if not device_link.exists():
         return None
-    
+
     try:
-        target = os.readlink(device_link)
-        # Extract PCI address from symlink target (e.g., "../../devices/pci0000:00/0000:00:02.0")
-        # We want just "0000:00:02.0"
-        pci_addr = target.split("/")[-1]
-        
-        # Match against debugfs device paths
-        debug_dri_path = Path("/sys/kernel/debug/dri")
-        device_path = debug_dri_path / pci_addr
+        pci_addr = device_link.readlink().name
+        device_path = Path("/sys/kernel/debug/dri") / pci_addr
         if device_path.exists():
             return device_path
     except Exception:
         pass
-    
+
     return None
 
 
@@ -148,6 +145,6 @@ def get_card_name_from_device(drm_device_path: Path) -> str:
     for card_dir in sorted(drm_class_path.iterdir()):
         if card_dir.name.startswith("card") and "-" not in card_dir.name:
             return card_dir.name
-    
+
     # Last resort fallback
     return "card0"
