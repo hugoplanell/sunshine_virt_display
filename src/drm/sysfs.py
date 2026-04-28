@@ -40,15 +40,23 @@ def get_display_ports(drm_device: Path) -> dict[str, list[str]]:
 
     result = run_command(f"ls -1 {drm_device}")
     if result.returncode != 0:
+        print(f"DEBUG: get_display_ports: failed to list {drm_device} (rc={result.returncode})")
         return ports
 
+    # Parse debugfs output and collect ports. Keep debug output concise.
     for line in result.stdout.strip().split("\n"):
         port_name = line.strip()
+        if not port_name:
+            continue
         if port_name.startswith("DP-"):
+            ports["DP"].append(port_name)
+        # Treat internal Embedded DisplayPort connectors (eDP) as DP ports
+        elif port_name.startswith("eDP-"):
             ports["DP"].append(port_name)
         elif port_name.startswith("HDMI-"):
             ports["HDMI"].append(port_name)
 
+    print(f"DEBUG: get_display_ports({drm_device.name}): DP={ports['DP']} HDMI={ports['HDMI']}")
     return ports
 
 
@@ -69,6 +77,7 @@ def get_connected_displays(card_name: str) -> list[str]:
                 except Exception:
                     pass
 
+    print(f"DEBUG: get_connected_displays({card_name}): connected={connected}")
     return connected
 
 
@@ -85,7 +94,38 @@ def find_empty_slot(drm_device: Path, card_name: str) -> tuple[str | None, Path 
         if port not in connected:
             return port, drm_device
 
+    # Debug: show why we failed to find a slot
+    print(f"DEBUG: find_empty_slot({drm_device.name}, {card_name}) -> no available ports. ports=DP:{ports['DP']} HDMI:{ports['HDMI']}, connected={connected}")
     return None, None
+
+
+def get_drm_device_for_card(card_name: str) -> Path | None:
+    """Find the DRM device path (from debugfs) for a given card name."""
+    drm_class_path = Path("/sys/class/drm")
+    card_path = drm_class_path / card_name
+    
+    if not card_path.exists():
+        return None
+    
+    device_link = card_path / "device"
+    if not device_link.exists():
+        return None
+    
+    try:
+        target = os.readlink(device_link)
+        # Extract PCI address from symlink target (e.g., "../../devices/pci0000:00/0000:00:02.0")
+        # We want just "0000:00:02.0"
+        pci_addr = target.split("/")[-1]
+        
+        # Match against debugfs device paths
+        debug_dri_path = Path("/sys/kernel/debug/dri")
+        device_path = debug_dri_path / pci_addr
+        if device_path.exists():
+            return device_path
+    except Exception:
+        pass
+    
+    return None
 
 
 def get_card_name_from_device(drm_device_path: Path) -> str:
@@ -93,7 +133,7 @@ def get_card_name_from_device(drm_device_path: Path) -> str:
     device_name = drm_device_path.name
 
     drm_class_path = Path("/sys/class/drm")
-    for card_dir in drm_class_path.iterdir():
+    for card_dir in sorted(drm_class_path.iterdir()):
         if card_dir.name.startswith("card") and "-" not in card_dir.name:
             device_link = card_dir / "device"
             if device_link.exists():
@@ -104,5 +144,10 @@ def get_card_name_from_device(drm_device_path: Path) -> str:
                 except Exception:
                     pass
 
-    # Fallback: assume card1 for discrete GPU (most common case)
-    return "card1"
+    # If no match found, attempt to find any available card
+    for card_dir in sorted(drm_class_path.iterdir()):
+        if card_dir.name.startswith("card") and "-" not in card_dir.name:
+            return card_dir.name
+    
+    # Last resort fallback
+    return "card0"

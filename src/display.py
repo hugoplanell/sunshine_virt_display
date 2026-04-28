@@ -11,6 +11,7 @@ from src.drm import (
     force_crtc_assignment,
     get_card_name_from_device,
     get_connected_displays,
+    get_drm_device_for_card,
     get_drm_devices,
     release_crtc,
     run_command,
@@ -91,13 +92,13 @@ def connect(width: int, height: int, refresh_rate: int, device: str | None = Non
         return False
 
     if device:
-        # User explicitly specified a card — find it or fail clearly.
-        matched = [d for d in drm_devices if get_card_name_from_device(d) == device]
-        if not matched:
+        # User explicitly specified a card name (e.g., card0, card1)
+        drm_device = get_drm_device_for_card(device)
+        if not drm_device:
             available = [get_card_name_from_device(d) for d in drm_devices]
             print(f"Error: device '{device}' not found. Available: {available}")
             return False
-        drm_device = matched[0]
+        card_name = device
     else:
         # Pick the device that has the most connected displays — on multi-GPU
         # systems this ensures we land on the card with physical monitors rather
@@ -111,7 +112,7 @@ def connect(width: int, height: int, refresh_rate: int, device: str | None = Non
                 best_count = n
                 best_device = dev
         drm_device = best_device
-    card_name = get_card_name_from_device(drm_device)
+        card_name = get_card_name_from_device(drm_device)
     print(f"  Using device: {drm_device.name} ({card_name})")
 
     connected_displays = get_connected_displays(card_name)
@@ -122,6 +123,31 @@ def connect(width: int, height: int, refresh_rate: int, device: str | None = Non
     # Step 3: Find empty slot
     print("\nStep 3: Finding empty display slot...")
     empty_port, slot_device = find_empty_slot(drm_device, card_name)
+
+    # Auto-selection can pick the card with active physical displays but no free
+    # virtual connector (common on hybrid GPU laptops). If that happens, try the
+    # remaining cards before giving up.
+    if not empty_port and not device:
+        print(f"  No empty slot on {card_name}, trying other DRM devices...")
+        for alt_device in drm_devices:
+            if alt_device == drm_device:
+                continue
+
+            alt_card = get_card_name_from_device(alt_device)
+            alt_connected = get_connected_displays(alt_card)
+            print(
+                f"  Trying device: {alt_device.name} ({alt_card}), connected: {alt_connected if alt_connected else 'None'}"
+            )
+
+            alt_port, alt_slot_device = find_empty_slot(alt_device, alt_card)
+            if alt_port:
+                drm_device = alt_device
+                card_name = alt_card
+                connected_displays = alt_connected
+                empty_port = alt_port
+                slot_device = alt_slot_device
+                print(f"  ✓ Switched to device: {drm_device.name} ({card_name})")
+                break
 
     if not empty_port:
         print("Error: No empty display slots available")

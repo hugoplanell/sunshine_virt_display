@@ -250,6 +250,36 @@ class TestConnect:
             result = connect(1920, 1080, 60)
         assert result is True
 
+    def test_fallback_to_other_gpu_when_first_has_no_slot(self, tmp_path):
+        dev1 = Path("/sys/kernel/debug/dri/0000:01:00.0")
+        dev2 = Path("/sys/kernel/debug/dri/0000:02:00.0")
+
+        def card_name(dev):
+            return "card1" if dev == dev1 else "card0"
+
+        def connected(card):
+            return ["eDP-1"] if card == "card1" else []
+
+        def slot_for(dev, card):
+            if dev == dev1:
+                return (None, None)
+            return ("DP-1", tmp_path)
+
+        with patch("src.display.SCRIPT_DIR", tmp_path), \
+             patch("src.display.get_pixel_clock_info", return_value=(100.0, 655.35, False)), \
+             patch("src.display.get_drm_devices", return_value=[dev1, dev2]), \
+             patch("src.display.get_card_name_from_device", side_effect=card_name), \
+             patch("src.display.get_connected_displays", side_effect=connected), \
+             patch("src.display.find_empty_slot", side_effect=slot_for), \
+             patch("src.display.run_command", return_value=_ok_run()), \
+             patch("src.display.release_crtc", return_value=True), \
+             patch("src.display.force_crtc_assignment", return_value=True), \
+             patch("src.display.wait_for_output_ready", return_value=(True, "1920x1080")), \
+             patch("src.display.clear_kwin_output_config"), \
+             patch("src.display.create_edid", return_value=b"\x00" * 256):
+            result = connect(1920, 1080, 60)
+        assert result is True
+
     def test_state_file_written(self, tmp_path):
         with patch("src.display.SCRIPT_DIR", tmp_path), \
              patch("src.display.get_pixel_clock_info", return_value=(100.0, 655.35, False)), \

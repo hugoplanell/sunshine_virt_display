@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.absolute()))
 
 import argparse
 
-from src import display
+from . import display
 
 
 def ensure_root():

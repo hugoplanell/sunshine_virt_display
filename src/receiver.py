@@ -24,11 +24,11 @@ while True:
     # 4. Accept a connection (This "blocks"/sleeps until someone connects)
     connection, client_address = server.accept()
     try:
-        # 5. Read the data (64 is the buffer size)
+        # 5. Read the data (128 is the buffer size)
         data = connection.recv(128)
         if data:
             args = data.decode('utf-8').split(',')
-            print("received : {args}")
+            print(f"received : {args}")
             subprocess.run(["/usr/bin/python3", "-m", "src.main"] + args, cwd=ROOT_DIR)
     finally:
         # 6. Always close the connection when done

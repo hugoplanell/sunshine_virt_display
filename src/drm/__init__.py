@@ -8,6 +8,7 @@ from src.drm.sysfs import (
     get_card_name_from_device,
     get_connected_displays,
     get_display_ports,
+    get_drm_device_for_card,
     get_drm_devices,
     run_command,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "get_card_name_from_device",
     "get_connected_displays",
     "get_display_ports",
+    "get_drm_device_for_card",
     "get_drm_devices",
     "release_crtc",
     "run_command",
