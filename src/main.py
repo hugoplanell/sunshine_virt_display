@@ -65,6 +65,12 @@ Examples:
             help="DRM card to use for the virtual display (e.g. card1). "
                  "Auto-detected by default (card with most connected displays).",
         )
+        _ = parser.add_argument(
+            "--disable-physical-displays",
+            action="store_true",
+            help="Turn off connected physical displays while virtual display is active. "
+                 "Applies across all DRM cards.",
+        )
 
         args = parser.parse_args()
 
@@ -76,7 +82,13 @@ Examples:
                 )
                 sys.exit(1)
 
-            success = display.connect(args.width, args.height, args.refresh_rate, device=args.device)
+            success = display.connect(
+                args.width,
+                args.height,
+                args.refresh_rate,
+                device=args.device,
+                disable_physical_displays=args.disable_physical_displays,
+            )
             sys.exit(0 if success else 1)
 
         elif args.disconnect:

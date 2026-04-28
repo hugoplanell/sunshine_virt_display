@@ -187,7 +187,7 @@ class TestConnect:
              patch("src.display.wait_for_output_ready", return_value=(True, "1920x1080")), \
              patch("src.display.clear_kwin_output_config"), \
              patch("src.display.create_edid", return_value=b"\x00" * 256):
-            connect(1920, 1080, 60)
+            connect(1920, 1080, 60, disable_physical_displays=True)
         mock_release.assert_called_with("card1", "HDMI-1")
 
     def test_force_crtc_when_not_ready(self, tmp_path, capsys):
@@ -293,7 +293,7 @@ class TestConnect:
              patch("src.display.wait_for_output_ready", return_value=(True, "1920x1080")), \
              patch("src.display.clear_kwin_output_config"), \
              patch("src.display.create_edid", return_value=b"\x00" * 256):
-            connect(1920, 1080, 60)
+            connect(1920, 1080, 60, disable_physical_displays=True)
 
         state_file = tmp_path / "virt_display.state"
         assert state_file.exists()

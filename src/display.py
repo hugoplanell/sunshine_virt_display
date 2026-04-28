@@ -4,6 +4,7 @@ Connect and disconnect virtual displays by managing EDIDs and sysfs connector st
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from src.drm import (
@@ -23,7 +24,13 @@ from src.edid import create_edid, find_best_vic_resolution, get_pixel_clock_info
 SCRIPT_DIR = Path(__file__).parent.parent.absolute()
 
 
-def connect(width: int, height: int, refresh_rate: int, device: str | None = None) -> bool:
+def connect(
+    width: int,
+    height: int,
+    refresh_rate: int,
+    device: str | None = None,
+    disable_physical_displays: bool = False,
+) -> bool:
     """
     Connect a virtual display:
     1. Generate custom EDID
@@ -168,18 +175,26 @@ def connect(width: int, height: int, refresh_rate: int, device: str | None = Non
 
     print(f"  ✓ EDID override applied")
 
-    # Step 5: Turn off all connected displays and explicitly release their CRTCs.
-    # On AMD, echo off > status marks the connector disconnected in sysfs but
-    # the compositor keeps the CRTC active.  Without an explicit CRTC release
-    # the compositor continues rendering to the old displays, Sunshine sees
-    # multiple monitors, and uses the wrong one.
-    print("\nStep 5: Turning off connected displays...")
-    for display in connected_displays:
-        _ = release_crtc(card_name, display)
-        status_path = f"/sys/class/drm/{card_name}-{display}/status"
-        cmd = f"sh -c 'echo off > {status_path}'"
-        _ = run_command(cmd)
-        print(f"  ✓ Turned off {display}")
+    # Step 5: Optionally turn off connected displays on all cards.
+    # This is opt-in because it can blank local displays unexpectedly.
+    disabled_displays_by_card: dict[str, list[str]] = {}
+    if disable_physical_displays:
+        print("\nStep 5: Turning off connected physical displays (all cards)...")
+        for dev in drm_devices:
+            card = get_card_name_from_device(dev)
+            card_connected = get_connected_displays(card)
+            if not card_connected:
+                continue
+
+            for display in card_connected:
+                _ = release_crtc(card, display)
+                status_path = f"/sys/class/drm/{card}-{display}/status"
+                cmd = f"sh -c 'echo off > {status_path}'"
+                _ = run_command(cmd)
+                disabled_displays_by_card.setdefault(card, []).append(display)
+                print(f"  ✓ Turned off {card}-{display}")
+    else:
+        print("\nStep 5: Skipping physical display shutdown (use --disable-physical-displays to enable)")
 
     # Step 6: Clear any stale KWin output config, then turn on virtual display
     print(f"\nStep 6: Preparing virtual display ({empty_port})...")
@@ -212,7 +227,15 @@ def connect(width: int, height: int, refresh_rate: int, device: str | None = Non
 
     # Save state for disconnect
     state_file = SCRIPT_DIR / "virt_display.state"
-    _ = state_file.write_text(f"{card_name}\n{empty_port}\n{','.join(connected_displays)}")
+    # Keep line 3 compatible with old state format (selected card displays), and
+    # append structured data for multi-card restore when option is enabled.
+    _ = state_file.write_text(
+        f"{card_name}\n"
+        f"{empty_port}\n"
+        f"{','.join(disabled_displays_by_card.get(card_name, []))}\n"
+        f"disabled_by_card_json={json.dumps(disabled_displays_by_card, sort_keys=True)}\n"
+        f"disable_physical_displays={1 if disable_physical_displays else 0}\n"
+    )
 
     print(f"\n✓ Virtual display successfully connected!")
     print(f"  Port: {card_name}-{empty_port}")
@@ -242,27 +265,46 @@ def disconnect() -> bool:
     card_name = state_data[0]
     virtual_port = state_data[1]
     previous_displays = state_data[2].split(",") if len(state_data) > 2 and state_data[2] else []
+    disabled_displays_by_card: dict[str, list[str]] = {card_name: previous_displays}
+
+    for line in state_data[3:]:
+        if line.startswith("disabled_by_card_json="):
+            raw_json = line.split("=", 1)[1].strip()
+            try:
+                parsed = json.loads(raw_json)
+                if isinstance(parsed, dict):
+                    normalized: dict[str, list[str]] = {}
+                    for parsed_card, parsed_displays in parsed.items():
+                        if isinstance(parsed_card, str) and isinstance(parsed_displays, list):
+                            normalized[parsed_card] = [d for d in parsed_displays if isinstance(d, str)]
+                    disabled_displays_by_card = normalized
+            except Exception:
+                pass
 
     print(f"  Virtual display: {card_name}-{virtual_port}")
-    print(f"  Previous displays: {previous_displays if previous_displays else 'None'}")
+    print(
+        f"  Previous displays: {disabled_displays_by_card if disabled_displays_by_card else 'None'}"
+    )
 
     # Step 1: Turn on physical displays FIRST — avoid a zero-output window
     # that can confuse the compositor (KWin crashes or stops rendering if
     # all outputs disappear at once).
     print("\nStep 1: Turning on previous displays...")
-    for display in previous_displays:
-        if display:
-            status_path = f"/sys/class/drm/{card_name}-{display}/status"
-            cmd = f"sh -c 'echo on > {status_path}'"
-            _ = run_command(cmd)
-            print(f"  ✓ Turned on {display}")
+    for restore_card, restore_displays in disabled_displays_by_card.items():
+        for display in restore_displays:
+            if display:
+                status_path = f"/sys/class/drm/{restore_card}-{display}/status"
+                cmd = f"sh -c 'echo on > {status_path}'"
+                _ = run_command(cmd)
+                print(f"  ✓ Turned on {restore_card}-{display}")
 
     # Step 2: Force CRTC assignment for restored displays
     # On AMD, sysfs hotplug alone doesn't assign CRTCs
     print("\nStep 2: Forcing CRTC assignment for restored displays...")
-    for display in previous_displays:
-        if display:
-            _ = force_crtc_assignment(card_name, display)
+    for restore_card, restore_displays in disabled_displays_by_card.items():
+        for display in restore_displays:
+            if display:
+                _ = force_crtc_assignment(restore_card, display)
 
     # Step 3: Release CRTC from virtual display and turn it off
     print(f"\nStep 3: Releasing CRTC from virtual display ({virtual_port})...")
